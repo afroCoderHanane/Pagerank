@@ -178,7 +178,7 @@ class WebGraph():
         Results are displayed in sorted order according to the pagerank vector pi.
         '''
         n = self.P.shape[0]
-        k = min(max_result, n)
+        k = min(max_results, n)
         vals,indices = torch.topk(pi,n)
 
         matches = 0

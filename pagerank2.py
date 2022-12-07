@@ -9,9 +9,8 @@ import math
 import torch
 import gzip
 import csv
-import gensim.downloader as api
 import logging
-
+import gensim.downloader as api
 vectors = api.load('glove-twitter-25')
 
 class WebGraph():
@@ -169,13 +168,41 @@ class WebGraph():
             return x.squeeze()
 
 
-    def search(self, pi, query='', max_results=10):
+    def search(self, pi, query='', max_results=10, s_weight = .03, power =30):
         '''
         Logs all urls that match the query.
         Results are displayed in sorted order according to the pagerank vector pi.
         '''
         n = self.P.shape[0]
         k = min(max_results, n)
+
+        #changes
+
+        S = vectors.most_similar(args.search_query)
+
+        for i in range(n):
+            new_n, score, w_weight = 0,0,0
+
+            urll = self._index_to_url(i)
+
+            if is_url_satisfies_query(urll, query):
+                new_n+=1
+                w_weight+=s_weight
+
+            for word in range(10):
+                w= S[word][0]
+
+                if is_url_satisfies_query(urll,w):
+                    new_n+=1
+                    w_weight+=S[word][1]**power
+
+            score+= new_n*w_weight
+
+            pi[i]+=score
+
+
+        #old code
+
         vals,indices = torch.topk(pi,n)
 
         matches = 0
@@ -186,8 +213,29 @@ class WebGraph():
             url = self._index_to_url(index)
             pagerank = vals[i].item()
             if url_satisfies_query(url,query):
-                logging.info(f'rank={matches} pagerank={pagerank:0.4e} url={url}')
+                logging.info(f'rank={matches} pagerank={pagerank} url={url}')
                 matches += 1
+
+
+def is_url_satisfies_query(url,query):
+    satisfies = False
+    terms = query.split()
+
+    num_terms=0
+    for term in terms:
+        if term[0] != '-':
+            num_terms+=1
+            if term in url:
+                satisfies = True
+    if num_terms==0:
+        satisfies=True
+
+    for term in terms:
+        if term[0] == '-':
+            if term[1:] in url:
+                return False
+    return satisfies
+
 
 
 def url_satisfies_query(url, query):
@@ -215,13 +263,11 @@ def url_satisfies_query(url, query):
     True
     '''
     satisfies = False
-    res = query.split()
     terms = query.split()
+    synonyms = vectors.most_similar(args.search_query)
 
-    for term in res:
-        tmp = vectors.most_similar(term, topn=5)
-        for index in range(len(tmp)):
-            terms.append(tmp[index][0])
+    for i in range(8):
+        terms.append(synonyms[i][0])
 
     num_terms=0
     for term in terms:
@@ -251,6 +297,9 @@ if __name__=='__main__':
     parser.add_argument('--epsilon', type=float, default=1e-6)
     parser.add_argument('--max_results', type=int, default=10)
     parser.add_argument('--verbose', action='store_true')
+    #add some argument to be parsed 
+    parser.add_argument('--power',type=int, default=30)
+    parser.add_argument('--s_weight',type=float, default=.03)
     args = parser.parse_args()
 
     if args.verbose:
@@ -261,4 +310,4 @@ if __name__=='__main__':
     g = WebGraph(args.data, filter_ratio=args.filter_ratio)
     v = g.make_personalization_vector(args.personalization_vector_query)
     pi = g.power_method(v, alpha=args.alpha, max_iterations=args.max_iterations, epsilon=args.epsilon)
-    g.search(pi, query=args.search_query, max_results=args.max_results)
+    g.search(pi, query=args.search_query, max_results=args.max_results,s_weight=args.s_weight, power=args.power)
